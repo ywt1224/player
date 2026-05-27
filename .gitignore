@@ -1,0 +1,30 @@
+# Third-party libraries
+ffmpeg-4.2.1-win32-dev/
+SDL2/
+dll/
+log/
+
+# Build & IDE
+build-*/
+release/
+debug/
+*.o
+*.obj
+*.moc
+*.exe
+Makefile
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.pro.user
+*.pro.user.*
+.vs/
+.vscode/
+
+# Qt UI files
+*.ui
+
+# OS
+.DS_Store
+Thumbs.db
+*.autosave
