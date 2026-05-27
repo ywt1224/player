@@ -39,11 +39,10 @@ bool AudioStreamer::Initialize(int src_rate, int src_channels,
         return false;
     }
 
-    if (WebRtcVad_Create(&vad_inst_) != 0 || WebRtcVad_Init(vad_inst_) != 0) {
+    if (!vad_.Init(kDstRate, kFrameSamples)) {
         std::cerr << "[AudioStreamer] VAD init failed\n";
         return false;
     }
-    WebRtcVad_set_mode(vad_inst_, 2);
 
     int opus_err = 0;
     opus_enc_ = opus_encoder_create(kDstRate, kDstChannels,
@@ -104,7 +103,6 @@ void AudioStreamer::Shutdown() {
     ws_socket_.close();
 
     if (opus_enc_) { opus_encoder_destroy(opus_enc_); opus_enc_ = nullptr; }
-    if (vad_inst_) { WebRtcVad_Free(vad_inst_);       vad_inst_  = nullptr; }
     if (swr_ctx_)  { swr_free(&swr_ctx_); }
 }
 
@@ -166,18 +164,17 @@ void AudioStreamer::RunVadAndEncode(const std::vector<int16_t>& pcm,
         const int16_t* frame = pcm.data() + offset;
         int64_t frame_pts = base_pts + static_cast<int64_t>(offset * 1000LL / kDstRate);
 
-        int vad_result = WebRtcVad_Process(vad_inst_, kDstRate, frame, kFrameSamples);
-        bool is_speech = (vad_result == 1);
+        bool is_speech = vad_.IsSpeech(frame, kFrameSamples);
 
         bool send_vad_end = false;
         if (!is_speech) {
-            silence_ms_ += kFrameMs;
-            if (silence_ms_ >= kMaxSilenceMs) {
+            vad_.add_silence(kFrameMs);
+            if (vad_.silence_ms() >= kMaxSilenceMs) {
                 send_vad_end = true;
-                silence_ms_ = 0;
+                vad_.reset_silence();
             }
         } else {
-            silence_ms_ = 0;
+            vad_.reset_silence();
         }
 
         std::vector<uint8_t> opus_out(kOpusMaxPayload);

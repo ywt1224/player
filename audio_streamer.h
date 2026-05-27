@@ -17,8 +17,9 @@ extern "C" {
 #include <libavutil/samplefmt.h>
 #include <libswresample/swresample.h>
 #include <opus/opus.h>
-#include <webrtc/common_audio/vad/include/webrtc_vad.h>
 }
+
+#include "vad_detector.h"
 
 #pragma pack(push, 1)
 struct NetAudioPacket {
@@ -78,7 +79,7 @@ private:
     AVSampleFormat src_fmt_ = AV_SAMPLE_FMT_FLTP;
 
     SwrContext*   swr_ctx_   = nullptr;
-    VadInst*      vad_inst_  = nullptr;
+    VadDetector   vad_;
     OpusEncoder*  opus_enc_  = nullptr;
 
     struct RawFrame {
@@ -99,7 +100,6 @@ private:
     std::atomic<bool> ws_connected_{false};
 
     uint32_t seq_counter_ = 0;
-    int silence_ms_ = 0;
 
     SubtitleCallback subtitle_cb_;
 };

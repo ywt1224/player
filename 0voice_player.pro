@@ -47,7 +47,8 @@ SOURCES += \
     ijksdl_timer.cpp \
     log/easylogging++.cc \
     lcef_decryptor.cpp \
-    lcef_avio.cpp
+    lcef_avio.cpp \
+    vad_detector.cpp
 
 HEADERS += \
         homewindow.h \
@@ -74,7 +75,8 @@ HEADERS += \
     log/easylogging++.h \
     lcef_format.h \
     lcef_decryptor.h \
-    lcef_avio.h
+    lcef_avio.h \
+    vad_detector.h
 
 FORMS += \
         homewindow.ui \
@@ -94,9 +96,7 @@ INCLUDEPATH += D:/OpenSSL-Win32/include
 # Opus: 需下载/编译 x86 版本的 libopus
 # INCLUDEPATH += $$PWD/opus/include
 # LIBS += $$PWD/opus/lib/x86/opus.lib
-# WebRTC VAD: 需下载/编译 x86 版本
-# INCLUDEPATH += $$PWD/webrtc_vad/include
-# LIBS += $$PWD/webrtc_vad/lib/x86/webrtc_vad.lib
+# VAD: 使用内置能量检测实现 (vad_detector.h)
 # -------------------------------------------------------
 LIBS += $$PWD/ffmpeg-4.2.1-win32-dev/lib/avformat.lib   \
         $$PWD/ffmpeg-4.2.1-win32-dev/lib/avcodec.lib    \
