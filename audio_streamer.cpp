@@ -13,12 +13,13 @@ extern "C" {
 #include <QJsonObject>
 #include <QUrl>
 #include <QUrlQuery>
-#include <QNetworkRequest>
-#include <QNetworkReply>
-#include <QEventLoop>
-#include <QDateTime>
-#include <QMessageAuthenticationCode>
-#include <QRandomGenerator>
+// [暂不启用] 动态Token生成依赖，临时Token模式下不需要
+// #include <QNetworkRequest>
+// #include <QNetworkReply>
+// #include <QEventLoop>
+// #include <QDateTime>
+// #include <QMessageAuthenticationCode>
+// #include <QRandomGenerator>
 #include <QSslError>
 
 // ===== Construction / Destruction =====
@@ -41,7 +42,8 @@ AudioStreamer::~AudioStreamer() {
 }
 
 // ===== NLS Config =====
-
+// [暂不启用] 动态Token模式入口，临时Token模式下用SetToken替代
+/*
 void AudioStreamer::SetNlsConfig(const std::string& ak_id,
                                  const std::string& ak_secret,
                                  const std::string& app_key,
@@ -51,6 +53,7 @@ void AudioStreamer::SetNlsConfig(const std::string& ak_id,
     app_key_   = app_key;
     region_    = region;
 }
+*/
 
 void AudioStreamer::SetToken(const std::string& token,
                              const std::string& app_key,
@@ -61,7 +64,9 @@ void AudioStreamer::SetToken(const std::string& token,
 }
 
 // ===== Token =====
-
+// [暂不启用] 用AK签名从阿里云HTTP接口获取临时Token
+// 需要 QNetworkAccessManager + HMAC-SHA1签名，当前使用硬编码Token，跳过此步骤
+/*
 bool AudioStreamer::GenerateToken() {
     QString token_url = QString("http://nls-meta.%1.aliyuncs.com/pop/2018-05-18/tokens")
                         .arg(QString::fromStdString(region_));
@@ -130,6 +135,7 @@ bool AudioStreamer::GenerateToken() {
     std::cerr << "[AudioStreamer] Unexpected token response\n";
     return false;
 }
+*/
 
 // ===== NLS Connection =====
 
@@ -164,7 +170,7 @@ void AudioStreamer::SendStartCommand() {
     payload["enable_intermediate_result"]    = true;
     payload["enable_punctuation_prediction"] = true;
     payload["enable_inverse_text_normalization"] = true;
-    payload["max_sentence_silence"]          = kMaxSilenceMs;
+    // payload["max_sentence_silence"] = kMaxSilenceMs;  // [暂不启用] 需要kMaxSilenceMs常量
 
     QJsonObject cmd;
     cmd["header"]  = header;
@@ -214,9 +220,10 @@ bool AudioStreamer::Initialize(int src_rate, int src_channels,
         return false;
     }
 
-    if (token_.empty()) {
-        if (!GenerateToken()) return false;
-    }
+    // [暂不启用] 动态Token获取，使用SetToken预先设置的硬编码Token
+    // if (token_.empty()) {
+    //     if (!GenerateToken()) return false;
+    // }
 
     running_ = true;
     process_thread_ = std::thread(&AudioStreamer::ProcessThreadFunc, this);
@@ -364,7 +371,7 @@ void AudioStreamer::ParseNlsResult(const std::string& nls_json) {
     if (name == "TranscriptionStarted") {
         std::cout << "[AudioStreamer] Transcription started\n";
         session_started_ = true;
-        sentence_begin_ms_ = 0.0;
+        // sentence_begin_ms_ = 0.0;  // [暂不启用]
         session_start_time_ = std::chrono::steady_clock::now();
         emit sigConnected();
 

@@ -73,6 +73,7 @@ int IjkMediaPlayer::ijkmp_prepare_async()
     } else {
         is_encrypted_ = false;
     }
+    // is_encrypted_ = false;
 
 
     // 调用ffplayer
