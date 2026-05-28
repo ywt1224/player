@@ -495,8 +495,8 @@ bool HomeWindow::play(std::string url)
 
     // 4. 注入到播放器链路
     mp_->SetAudioStreamer(audio_streamer_);
-    mp_->SetSubtitleManager(subtitle_mgr_);
-    ui->display->SetSubtitleManager(subtitle_mgr_);
+//    mp_->SetSubtitleManager(subtitle_mgr_);
+//    ui->display->SetSubtitleManager(subtitle_mgr_);
 
     // 1.2 设置url
     mp_->ijkmp_set_data_source(url.c_str());//这个音量就只是设计数值嘛，重采样的时候再去利用

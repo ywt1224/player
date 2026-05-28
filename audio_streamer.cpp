@@ -281,6 +281,8 @@ void AudioStreamer::FeedAudioFrame(const uint8_t* const* data, int /*linesize*/,
 void AudioStreamer::ProcessThreadFunc() {
     std::vector<int16_t> pcm_16k;
 
+    std::cout << "[AudioStreamer] process_thread started\n";  // [排障日志]
+
     while (running_) {
         RawFrame frame;
         {
@@ -291,18 +293,35 @@ void AudioStreamer::ProcessThreadFunc() {
             raw_queue_.pop();
         }
 
-        if (!ResampleFrame(reinterpret_cast<const uint8_t* const*>(
-                               frame.buffer.data()),
+        std::cout << "[AudioStreamer] process_thread got frame, samples="
+                  << frame.nb_samples << "\n";  // [排障日志]
+
+        // 根据fmt构造src_ptrs数组，修复原reinterpret_cast野指针问题
+        int bps = av_get_bytes_per_sample(frame.fmt);
+        int nr_planes = av_sample_fmt_is_planar(frame.fmt) ? src_channels_ : 1;
+        int plane_sz = frame.nb_samples * bps;
+        const uint8_t* src_ptrs[8] = {};
+        for (int p = 0; p < nr_planes; ++p) {
+            src_ptrs[p] = frame.buffer.data() + p * plane_sz;
+        }
+
+        if (!ResampleFrame(src_ptrs,
                            frame.nb_samples, frame.fmt, pcm_16k)) {
+            std::cerr << "[AudioStreamer] resample failed\n";  // [排障日志]
             continue;
         }
 
-        // Send PCM directly to NLS (no Opus encoding)
+        std::cout << "[AudioStreamer] resampled to " << pcm_16k.size()
+                  << " samples\n";  // [排障日志]
+
+        // [排障] 先不发送，只验证重采样流程是否正常
+        /*
         if (session_started_ && !task_failed_) {
             int bytes = static_cast<int>(pcm_16k.size()) * sizeof(int16_t);
             QByteArray audio(reinterpret_cast<const char*>(pcm_16k.data()), bytes);
             ws_socket_.sendBinaryMessage(audio);
         }
+        */
     }
 }
 
