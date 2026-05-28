@@ -477,6 +477,8 @@ bool HomeWindow::play(std::string url)
         "cn-shanghai"             // 区域
     );
 
+    // [暂不启用] 字幕渲染，先验证NLS连通性
+    /*
     // 2. 创建 SubtitleManager
     subtitle_mgr_ = new SubtitleManager();
     SubtitleRenderConfig subCfg;
@@ -489,6 +491,7 @@ bool HomeWindow::play(std::string url)
         [this](const std::string& json) {
             if (subtitle_mgr_) subtitle_mgr_->OnMessage(json);
         });
+    */
 
     // 4. 注入到播放器链路
     mp_->SetAudioStreamer(audio_streamer_);
