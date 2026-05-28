@@ -183,14 +183,14 @@ void SubtitleManager::UpdateFinalLines(double videoTimeMs) {
         } else if (videoTimeMs < line.beginMs + cfg_.fadeInMs) {
             line.state = SubtitleState::FADE_IN;
             double t = (videoTimeMs - line.beginMs) / cfg_.fadeInMs;
-            line.opacity = EaseInCubic(std::clamp(t, 0.0, 1.0));
+            line.opacity = EaseInCubic(t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t));
         } else if (videoTimeMs < line.endMs) {
             line.state   = SubtitleState::VISIBLE;
             line.opacity = 1.0;
         } else if (videoTimeMs < line.endMs + cfg_.fadeOutMs) {
             line.state = SubtitleState::FADE_OUT;
             double t = (videoTimeMs - line.endMs) / cfg_.fadeOutMs;
-            line.opacity = 1.0 - EaseOutCubic(std::clamp(t, 0.0, 1.0));
+            line.opacity = 1.0 - EaseOutCubic(t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t));
         } else {
             line.state   = SubtitleState::HIDDEN;
             line.opacity = 0.0;

@@ -9,6 +9,20 @@ extern "C" {
 #include <libavutil/mathematics.h>
 }
 
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QUrl>
+#include <QUrlQuery>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QEventLoop>
+#include <QDateTime>
+#include <QMessageAuthenticationCode>
+#include <QRandomGenerator>
+#include <QSslError>
+
+// ===== Construction / Destruction =====
+
 AudioStreamer::AudioStreamer(QObject* parent)
     : QObject(parent)
 {
@@ -18,11 +32,159 @@ AudioStreamer::AudioStreamer(QObject* parent)
             this, &AudioStreamer::onDisconnected);
     connect(&ws_socket_, &QWebSocket::textMessageReceived,
             this, &AudioStreamer::onTextMessage);
+    connect(&ws_socket_, QOverload<const QList<QSslError>&>::of(&QWebSocket::sslErrors),
+            this, &AudioStreamer::onSslErrors);
 }
 
 AudioStreamer::~AudioStreamer() {
     Shutdown();
 }
+
+// ===== NLS Config =====
+
+void AudioStreamer::SetNlsConfig(const std::string& ak_id,
+                                 const std::string& ak_secret,
+                                 const std::string& app_key,
+                                 const std::string& region) {
+    ak_id_     = ak_id;
+    ak_secret_ = ak_secret;
+    app_key_   = app_key;
+    region_    = region;
+}
+
+// ===== Token =====
+
+bool AudioStreamer::GenerateToken() {
+    QString token_url = QString("http://nls-meta.%1.aliyuncs.com/pop/2018-05-18/tokens")
+                        .arg(QString::fromStdString(region_));
+
+    QString ak = QString::fromStdString(ak_id_);
+    QString sk = QString::fromStdString(ak_secret_);
+
+    QString timestamp = QDateTime::currentDateTimeUtc()
+                        .toString("yyyy-MM-ddTHH:mm:ssZ");
+    QString nonce = QString::number(QRandomGenerator::global()->generate64());
+
+    QUrlQuery params;
+    params.addQueryItem("AccessKeyId", ak);
+    params.addQueryItem("Action", "CreateToken");
+    params.addQueryItem("Format", "JSON");
+    params.addQueryItem("RegionId", QString::fromStdString(region_));
+    params.addQueryItem("SignatureMethod", "HMAC-SHA1");
+    params.addQueryItem("SignatureNonce", nonce);
+    params.addQueryItem("SignatureVersion", "1.0");
+    params.addQueryItem("Timestamp", timestamp);
+    params.addQueryItem("Version", "2018-05-18");
+
+    QString canonical = params.toString(QUrl::FullyDecoded);
+    QString string_to_sign = "GET&%2F&"
+                           + QString(QUrl::toPercentEncoding(canonical));
+
+    QByteArray signature = QMessageAuthenticationCode::hash(
+        string_to_sign.toUtf8(), (sk + "&").toUtf8(),
+        QCryptographicHash::Sha1);
+
+    QString sig_encoded = QString(QUrl::toPercentEncoding(
+        signature.toBase64()));
+
+    QUrl url(token_url);
+    QUrlQuery final_q(canonical);
+    final_q.addQueryItem("Signature", sig_encoded);
+    url.setQuery(final_q);
+
+    QNetworkRequest request(url);
+    QNetworkReply* reply = net_mgr_.get(request);
+
+    QEventLoop loop;
+    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    if (reply->error() != QNetworkReply::NoError) {
+        std::cerr << "[AudioStreamer] Token request failed: "
+                  << reply->errorString().toStdString() << "\n";
+        reply->deleteLater();
+        return false;
+    }
+
+    QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    reply->deleteLater();
+
+    QJsonObject obj = doc.object();
+    if (obj.contains("Token")) {
+        QJsonObject t = obj["Token"].toObject();
+        token_ = t["Id"].toString().toStdString();
+        token_expire_time_ = static_cast<long>(t["ExpireTime"].toDouble());
+        std::cout << "[AudioStreamer] Token obtained, expires in "
+                  << (token_expire_time_ - std::time(0)) << "s\n";
+        return true;
+    }
+
+    std::cerr << "[AudioStreamer] Unexpected token response\n";
+    return false;
+}
+
+// ===== NLS Connection =====
+
+void AudioStreamer::ConnectToNls() {
+    std::string host = "nls-gateway-" + region_ + ".aliyuncs.com";
+
+    QUrl url;
+    url.setScheme("wss");
+    url.setHost(QString::fromStdString(host));
+    url.setPath("/stream/v1/asr");
+
+    QUrlQuery query;
+    query.addQueryItem("token", QString::fromStdString(token_));
+    url.setQuery(query);
+
+    std::cout << "[AudioStreamer] Connecting to NLS: " << host << "\n";
+    ws_socket_.open(url);
+}
+
+void AudioStreamer::SendStartCommand() {
+    task_id_ = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+
+    QJsonObject header;
+    header["name"]      = QStringLiteral("StartTranscription");
+    header["namespace"] = QStringLiteral("SpeechRecognizer");
+    header["task_id"]   = QString::fromStdString(task_id_);
+
+    QJsonObject payload;
+    payload["format"]                        = QStringLiteral("pcm");
+    payload["sample_rate"]                   = kDstRate;
+    payload["enable_intermediate_result"]    = true;
+    payload["enable_punctuation_prediction"] = true;
+    payload["enable_inverse_text_normalization"] = true;
+    payload["max_sentence_silence"]          = kMaxSilenceMs;
+
+    QJsonObject cmd;
+    cmd["header"]  = header;
+    cmd["payload"] = payload;
+
+    QJsonDocument doc(cmd);
+    ws_socket_.sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    std::cout << "[AudioStreamer] StartTranscription sent\n";
+}
+
+void AudioStreamer::SendStopCommand() {
+    if (!session_started_) return;
+
+    QJsonObject header;
+    header["name"]      = QStringLiteral("StopTranscription");
+    header["namespace"] = QStringLiteral("SpeechRecognizer");
+    header["task_id"]   = QString::fromStdString(task_id_);
+
+    QJsonObject cmd;
+    cmd["header"]  = header;
+    cmd["payload"] = QJsonObject();
+
+    QJsonDocument doc(cmd);
+    ws_socket_.sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    std::cout << "[AudioStreamer] StopTranscription sent\n";
+}
+
+// ===== Initialize / Shutdown =====
 
 bool AudioStreamer::Initialize(int src_rate, int src_channels,
                                AVSampleFormat src_fmt) {
@@ -44,30 +206,33 @@ bool AudioStreamer::Initialize(int src_rate, int src_channels,
         return false;
     }
 
-    int opus_err = 0;
-    opus_enc_ = opus_encoder_create(kDstRate, kDstChannels,
-                                    OPUS_APPLICATION_AUDIO, &opus_err);
-    if (opus_err != OPUS_OK || !opus_enc_) {
-        std::cerr << "[AudioStreamer] opus_encoder_create failed\n";
-        return false;
-    }
-    opus_encoder_ctl(opus_enc_, OPUS_SET_BITRATE(24000));
-    opus_encoder_ctl(opus_enc_, OPUS_SET_COMPLEXITY(5));
-    opus_encoder_ctl(opus_enc_, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
-
-    if (!ws_url_.empty()) {
-        ws_socket_.open(QString::fromStdString(ws_url_));
-    }
+    if (!GenerateToken()) return false;
 
     running_ = true;
     process_thread_ = std::thread(&AudioStreamer::ProcessThreadFunc, this);
 
+    ConnectToNls();
+
     return true;
 }
 
+void AudioStreamer::Shutdown() {
+    SendStopCommand();
+
+    running_ = false;
+    raw_cv_.notify_all();
+
+    if (process_thread_.joinable()) process_thread_.join();
+
+    ws_socket_.close();
+    if (swr_ctx_) { swr_free(&swr_ctx_); }
+}
+
+// ===== Feed Audio (called from decoder thread) =====
+
 void AudioStreamer::FeedAudioFrame(const uint8_t* const* data, int /*linesize*/,
-                                    int nb_samples, int64_t pts_ms,
-                                    AVSampleFormat fmt) {
+                                   int nb_samples, int64_t pts_ms,
+                                   AVSampleFormat fmt) {
     if (!running_) return;
 
     int bytes_per_sample = av_get_bytes_per_sample(fmt);
@@ -94,18 +259,6 @@ void AudioStreamer::FeedAudioFrame(const uint8_t* const* data, int /*linesize*/,
     raw_cv_.notify_one();
 }
 
-void AudioStreamer::Shutdown() {
-    running_ = false;
-    raw_cv_.notify_all();
-
-    if (process_thread_.joinable()) process_thread_.join();
-
-    ws_socket_.close();
-
-    if (opus_enc_) { opus_encoder_destroy(opus_enc_); opus_enc_ = nullptr; }
-    if (swr_ctx_)  { swr_free(&swr_ctx_); }
-}
-
 // ===== Processing Thread =====
 
 void AudioStreamer::ProcessThreadFunc() {
@@ -127,9 +280,16 @@ void AudioStreamer::ProcessThreadFunc() {
             continue;
         }
 
-        RunVadAndEncode(pcm_16k, frame.pts_ms);
+        // Send PCM directly to NLS (no Opus encoding)
+        if (session_started_ && !task_failed_) {
+            int bytes = static_cast<int>(pcm_16k.size()) * sizeof(int16_t);
+            QByteArray audio(reinterpret_cast<const char*>(pcm_16k.data()), bytes);
+            ws_socket_.sendBinaryMessage(audio);
+        }
     }
 }
+
+// ===== Resample =====
 
 bool AudioStreamer::ResampleFrame(const uint8_t* const* src, int src_samples,
                                   AVSampleFormat src_fmt,
@@ -155,86 +315,95 @@ bool AudioStreamer::ResampleFrame(const uint8_t* const* src, int src_samples,
     return true;
 }
 
-void AudioStreamer::RunVadAndEncode(const std::vector<int16_t>& pcm,
-                                     int64_t base_pts) {
-    size_t total_samples = pcm.size();
-    size_t offset = 0;
-
-    while (offset + kFrameSamples <= total_samples) {
-        const int16_t* frame = pcm.data() + offset;
-        int64_t frame_pts = base_pts + static_cast<int64_t>(offset * 1000LL / kDstRate);
-
-        bool is_speech = vad_.IsSpeech(frame, kFrameSamples);
-
-        bool send_vad_end = false;
-        if (!is_speech) {
-            vad_.add_silence(kFrameMs);
-            if (vad_.silence_ms() >= kMaxSilenceMs) {
-                send_vad_end = true;
-                vad_.reset_silence();
-            }
-        } else {
-            vad_.reset_silence();
-        }
-
-        std::vector<uint8_t> opus_out(kOpusMaxPayload);
-        int opus_len = opus_encode(opus_enc_, frame, kFrameSamples,
-                                   opus_out.data(),
-                                   static_cast<opus_int32>(opus_out.size()));
-        if (opus_len > 0) {
-            opus_out.resize(opus_len);
-            SendPacket(opus_out, frame_pts, is_speech, send_vad_end);
-        }
-
-        offset += kFrameSamples;
-    }
-}
-
-// sendBinaryMessage() is thread-safe in Qt, so this can be called directly
-// from the processing thread.
-void AudioStreamer::SendPacket(const std::vector<uint8_t>& opus_data,
-                                uint64_t pts, bool is_speech, bool vad_end) {
-    if (ws_socket_.state() != QAbstractSocket::ConnectedState)
-        return;
-
-    size_t total_len = sizeof(NetAudioPacket) + opus_data.size();
-    std::vector<uint8_t> buf(total_len);
-
-    auto* hdr = reinterpret_cast<NetAudioPacket*>(buf.data());
-    hdr->magic    = kMagic;
-    hdr->version  = 1;
-    hdr->seq      = seq_counter_++;
-    hdr->pts      = pts;
-    hdr->opus_len = static_cast<uint16_t>(opus_data.size());
-    hdr->flags    = (is_speech ? 1 : 0) | (vad_end ? 2 : 0);
-    std::memset(hdr->reserved, 0, sizeof(hdr->reserved));
-
-    std::memcpy(buf.data() + sizeof(NetAudioPacket),
-                opus_data.data(), opus_data.size());
-
-    QByteArray payload(reinterpret_cast<const char*>(buf.data()),
-                       static_cast<int>(buf.size()));
-    ws_socket_.sendBinaryMessage(payload);
-}
-
-// ===== WebSocket Callbacks (run on main thread via Qt event loop) =====
+// ===== WebSocket Callbacks =====
 
 void AudioStreamer::onConnected() {
-    std::cout << "[AudioStreamer] WebSocket connected\n";
-    ws_connected_.store(true);
-    emit sigConnected();
+    std::cout << "[AudioStreamer] NLS WSS connected\n";
+    SendStartCommand();
 }
 
 void AudioStreamer::onDisconnected() {
-    std::cout << "[AudioStreamer] WebSocket disconnected\n";
-    ws_connected_.store(false);
+    std::cout << "[AudioStreamer] NLS WSS disconnected\n";
+    session_started_ = false;
     emit sigDisconnected();
+}
+
+void AudioStreamer::onSslErrors(const QList<QSslError>& errors) {
+    for (const auto& e : errors) {
+        std::cerr << "[AudioStreamer] SSL error: "
+                  << e.errorString().toStdString() << "\n";
+    }
+    ws_socket_.ignoreSslErrors();
 }
 
 void AudioStreamer::onTextMessage(const QString& message) {
     std::string msg = message.toStdString();
-    std::cout << "[AudioStreamer] Recv: " << msg << "\n";
-    if (subtitle_cb_) {
-        subtitle_cb_(msg);
+    std::cout << "[AudioStreamer] NLS recv: " << msg.substr(0, 200) << "\n";
+    ParseNlsResult(msg);
+}
+
+// ===== Parse NLS Result → Subtitle JSON =====
+
+void AudioStreamer::ParseNlsResult(const std::string& nls_json) {
+    QJsonDocument doc = QJsonDocument::fromJson(
+        QByteArray::fromStdString(nls_json));
+    QJsonObject root = doc.object();
+    QJsonObject header = root["header"].toObject();
+    QString name = header["name"].toString();
+
+    if (name == "TranscriptionStarted") {
+        std::cout << "[AudioStreamer] Transcription started\n";
+        session_started_ = true;
+        sentence_begin_ms_ = 0.0;
+        session_start_time_ = std::chrono::steady_clock::now();
+        emit sigConnected();
+
+    } else if (name == "TranscriptionResultChanged") {
+        QJsonObject payload = root["payload"].toObject();
+        QString text = payload["result"].toString();
+        if (text.isEmpty()) return;
+
+        QJsonObject sub;
+        sub["type"] = QStringLiteral("subtitle_interim");
+        sub["text"] = text;
+
+        QJsonDocument out(sub);
+        std::string json = out.toJson(QJsonDocument::Compact).toStdString();
+        if (subtitle_cb_) subtitle_cb_(json);
+
+    } else if (name == "SentenceEnd") {
+        QJsonObject payload = root["payload"].toObject();
+        QString text = payload["result"].toString();
+        if (text.isEmpty()) return;
+
+        int begin_time = payload["begin_time"].toInt();
+        int end_time   = payload["end_time"].toInt();
+        sentence_index_++;
+
+        QJsonObject sub;
+        sub["type"]       = QStringLiteral("subtitle_final");
+        sub["text"]       = text;
+        sub["begin"]      = static_cast<double>(begin_time);
+        sub["end"]        = static_cast<double>(end_time);
+        sub["sentenceId"] = sentence_index_;
+
+        QJsonDocument out(sub);
+        std::string json = out.toJson(QJsonDocument::Compact).toStdString();
+        if (subtitle_cb_) subtitle_cb_(json);
+
+        std::cout << "[AudioStreamer] SentenceEnd: " << text.toStdString()
+                  << " [" << begin_time << "-" << end_time << "ms]\n";
+
+    } else if (name == "TranscriptionCompleted") {
+        std::cout << "[AudioStreamer] Transcription completed\n";
+        session_started_ = false;
+
+    } else if (name == "TaskFailed") {
+        std::cerr << "[AudioStreamer] TaskFailed: "
+                  << root["payload"].toObject()["error_message"].toString().toStdString()
+                  << "\n";
+        task_failed_ = true;
+        session_started_ = false;
+        emit sigDisconnected();
     }
 }

@@ -468,10 +468,14 @@ bool HomeWindow::play(std::string url)
     mp_->AddVideoRefreshCallback(std::bind(&HomeWindow::OutputVideo, this,
                                            std::placeholders::_1));
 
-    // ---- Whisper ASR 集成: 创建音频流和字幕管理器 ----
-    // 1. 创建 AudioStreamer (在 UI 线程创建以保证 QWebSocket 事件循环正确)
+    // ---- ASR 集成: NLS 直连 ----
+    // 1. 创建 AudioStreamer
     audio_streamer_ = new AudioStreamer();
-    audio_streamer_->SetWsUrl("ws://localhost:8080");  // 默认 ASR 服务器地址
+    audio_streamer_->SetNlsConfig(
+        "LTAI5tXXXXXXXXXXXX",     // TODO: 替换为阿里云 AccessKey ID
+        "XXXXXXXXXXXXXXXXXXXX",   // TODO: 替换为阿里云 AccessKey Secret
+        "your_nls_appkey"         // TODO: 替换为 NLS 项目 AppKey
+    );
 
     // 2. 创建 SubtitleManager
     subtitle_mgr_ = new SubtitleManager();
