@@ -93,7 +93,7 @@ INCLUDEPATH += D:/OpenSSL-Win32/include
 # ---- Whisper ASR 集成: 需要以下外部依赖 ----
 # nlohmann/json (header-only): 放在项目目录或系统 include path
 INCLUDEPATH += $$PWD/nlohmann_json
-	# ASR: NLS WebSocket 直连 (PCM, 无需 Opus)
+# ASR: NLS WebSocket 直连 (PCM, 无需 Opus)
 # VAD: 使用内置能量检测实现 (vad_detector.h)
 # -------------------------------------------------------
 LIBS += $$PWD/ffmpeg-4.2.1-win32-dev/lib/avformat.lib   \

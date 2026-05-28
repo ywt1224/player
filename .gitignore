@@ -28,3 +28,5 @@ qrc_*.cpp
 .DS_Store
 Thumbs.db
 *.autosave
+opus/
+nlohmann/

@@ -468,13 +468,13 @@ bool HomeWindow::play(std::string url)
     mp_->AddVideoRefreshCallback(std::bind(&HomeWindow::OutputVideo, this,
                                            std::placeholders::_1));
 
-    // ---- ASR 集成: NLS 直连 ----
+    // ---- ASR 集成: NLS 直连 (临时 Token 模式) ----
     // 1. 创建 AudioStreamer
     audio_streamer_ = new AudioStreamer();
-    audio_streamer_->SetNlsConfig(
-        "LTAI5tXXXXXXXXXXXX",     // TODO: 替换为阿里云 AccessKey ID
-        "XXXXXXXXXXXXXXXXXXXX",   // TODO: 替换为阿里云 AccessKey Secret
-        "your_nls_appkey"         // TODO: 替换为 NLS 项目 AppKey
+    audio_streamer_->SetToken(
+        "07377614028e4f25be2b1009b7ffa5a6",           // TODO: 填入从阿里云获取的临时 Token
+        "w8bHbUQmJg2Ei94F",       // NLS 项目 AppKey
+        "cn-shanghai"             // 区域
     );
 
     // 2. 创建 SubtitleManager

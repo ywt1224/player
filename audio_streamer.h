@@ -13,7 +13,6 @@
 
 #include <QObject>
 #include <QWebSocket>
-#include <QNetworkAccessManager>
 
 extern "C" {
 #include <libavutil/samplefmt.h>
@@ -28,10 +27,8 @@ public:
     explicit AudioStreamer(QObject* parent = nullptr);
     ~AudioStreamer();
 
-    void SetNlsConfig(const std::string& ak_id,
-                      const std::string& ak_secret,
-                      const std::string& app_key,
-                      const std::string& region = "cn-shanghai");
+    void SetToken(const std::string& token, const std::string& app_key,
+                  const std::string& region = "cn-shanghai");
     bool Initialize(int src_rate, int src_channels, AVSampleFormat src_fmt);
     void FeedAudioFrame(const uint8_t* const* data, int linesize,
                         int nb_samples, int64_t pts_ms, AVSampleFormat fmt);
@@ -52,13 +49,10 @@ private slots:
     void onSslErrors(const QList<QSslError>& errors);
 
 private:
-    // Processing thread
     void ProcessThreadFunc();
     bool ResampleFrame(const uint8_t* const* src, int src_samples,
                        AVSampleFormat src_fmt, std::vector<int16_t>& dst_pcm);
 
-    // NLS protocol
-    bool GenerateToken();
     void ConnectToNls();
     void SendStartCommand();
     void SendStopCommand();
@@ -66,9 +60,7 @@ private:
 
     static constexpr int kDstRate      = 16000;
     static constexpr int kDstChannels  = 1;
-    static constexpr int kFrameMs      = 20;
     static constexpr int kFrameSamples = 320;
-    static constexpr int kMaxSilenceMs = 800;
 
     int src_rate_     = 48000;
     int src_channels_ = 2;
@@ -77,13 +69,9 @@ private:
     SwrContext* swr_ctx_ = nullptr;
     VadDetector vad_;
 
-    // NLS auth
-    std::string ak_id_;
-    std::string ak_secret_;
     std::string app_key_;
-    std::string region_     = "cn-shanghai";
+    std::string region_  = "cn-shanghai";
     std::string token_;
-    long token_expire_time_ = -1;
 
     struct RawFrame {
         std::vector<uint8_t> buffer;
@@ -99,7 +87,6 @@ private:
     std::thread process_thread_;
 
     QWebSocket ws_socket_;
-    QNetworkAccessManager net_mgr_;
     std::atomic<bool> session_started_{false};
     std::atomic<bool> task_failed_{false};
 
@@ -108,6 +95,5 @@ private:
     SubtitleCallback subtitle_cb_;
 
     int sentence_index_ = 0;
-    double sentence_begin_ms_ = 0.0;
     std::chrono::steady_clock::time_point session_start_time_;
 };

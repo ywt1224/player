@@ -52,6 +52,14 @@ void AudioStreamer::SetNlsConfig(const std::string& ak_id,
     region_    = region;
 }
 
+void AudioStreamer::SetToken(const std::string& token,
+                             const std::string& app_key,
+                             const std::string& region) {
+    token_   = token;
+    app_key_ = app_key;
+    region_  = region;
+}
+
 // ===== Token =====
 
 bool AudioStreamer::GenerateToken() {
@@ -206,7 +214,9 @@ bool AudioStreamer::Initialize(int src_rate, int src_channels,
         return false;
     }
 
-    if (!GenerateToken()) return false;
+    if (token_.empty()) {
+        if (!GenerateToken()) return false;
+    }
 
     running_ = true;
     process_thread_ = std::thread(&AudioStreamer::ProcessThreadFunc, this);
