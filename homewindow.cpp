@@ -476,7 +476,7 @@ bool HomeWindow::play(std::string url)
         "w8bHbUQmJg2Ei94F",       // NLS 项目 AppKey
         "cn-shanghai"             // 区域
     );
-
+ 
     // [暂不启用] 字幕渲染，先验证NLS连通性
     /*
     // 2. 创建 SubtitleManager
@@ -495,7 +495,7 @@ bool HomeWindow::play(std::string url)
 
     // 4. 注入到播放器链路
     mp_->SetAudioStreamer(audio_streamer_);
-//    mp_->SetSubtitleManager(subtitle_mgr_);
+    // mp_->SetSubtitleManager(subtitle_mgr_);
 //    ui->display->SetSubtitleManager(subtitle_mgr_);
 
     // 1.2 设置url

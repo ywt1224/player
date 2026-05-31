@@ -1525,7 +1525,7 @@ int Decoder::audio_thread(void *arg)
             }
 
             av_frame_move_ref(af->frame, frame);
-            frame_queue_push(&is->sampq);  // 代表队列真正插入一帧数据
+            frame_queue_push(&is->sampq);  // 代表 队列 真正插入一帧数据
         }
     } while (ret >= 0 || ret == AVERROR(EAGAIN) || ret == AVERROR_EOF);
 the_end:

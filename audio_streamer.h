@@ -47,6 +47,7 @@ private slots:
     void onDisconnected();
     void onTextMessage(const QString& message);
     void onSslErrors(const QList<QSslError>& errors);
+    void onError(QAbstractSocket::SocketError error);
 
 private:
     void ProcessThreadFunc();

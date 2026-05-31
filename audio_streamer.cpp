@@ -27,6 +27,7 @@ extern "C" {
 AudioStreamer::AudioStreamer(QObject* parent)
     : QObject(parent)
 {
+    qRegisterMetaType<QAbstractSocket::SocketError>("QAbstractSocket::SocketError");
     connect(&ws_socket_, &QWebSocket::connected,
             this, &AudioStreamer::onConnected);
     connect(&ws_socket_, &QWebSocket::disconnected,
@@ -35,6 +36,11 @@ AudioStreamer::AudioStreamer(QObject* parent)
             this, &AudioStreamer::onTextMessage);
     connect(&ws_socket_, QOverload<const QList<QSslError>&>::of(&QWebSocket::sslErrors),
             this, &AudioStreamer::onSslErrors);
+    connect(&ws_socket_, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
+            this, [this](QAbstractSocket::SocketError) {
+        std::cerr << "[AudioStreamer] Socket error: "
+                  << ws_socket_.errorString().toStdString() << "\n";
+    });
 }
 
 AudioStreamer::~AudioStreamer() {
@@ -140,6 +146,9 @@ bool AudioStreamer::GenerateToken() {
 // ===== NLS Connection =====
 
 void AudioStreamer::ConnectToNls() {
+    qDebug() << "SSL 支持:" << QSslSocket::supportsSsl();
+    qDebug() << "编译时版本:" << QSslSocket::sslLibraryBuildVersionString();
+    qDebug() << "运行时版本:" << QSslSocket::sslLibraryVersionString();
     std::string host = "nls-gateway-" + region_ + ".aliyuncs.com";
 
     QUrl url;
@@ -281,7 +290,7 @@ void AudioStreamer::FeedAudioFrame(const uint8_t* const* data, int /*linesize*/,
 void AudioStreamer::ProcessThreadFunc() {
     std::vector<int16_t> pcm_16k;
 
-    std::cout << "[AudioStreamer] process_thread started\n";  // [排障日志]
+//    std::cout << "[AudioStreamer] process_thread started\n";  // [排障日志]
 
     while (running_) {
         RawFrame frame;
@@ -293,8 +302,8 @@ void AudioStreamer::ProcessThreadFunc() {
             raw_queue_.pop();
         }
 
-        std::cout << "[AudioStreamer] process_thread got frame, samples="
-                  << frame.nb_samples << "\n";  // [排障日志]
+//        std::cout << "[AudioStreamer] process_thread got frame, samples="
+//                  << frame.nb_samples << "\n";  // [排障日志]
 
         // 根据fmt构造src_ptrs数组，修复原reinterpret_cast野指针问题
         int bps = av_get_bytes_per_sample(frame.fmt);
@@ -311,8 +320,8 @@ void AudioStreamer::ProcessThreadFunc() {
             continue;
         }
 
-        std::cout << "[AudioStreamer] resampled to " << pcm_16k.size()
-                  << " samples\n";  // [排障日志]
+//        std::cout << "[AudioStreamer] resampled to " << pcm_16k.size()
+//                  << " samples\n";  // [排障日志]
 
         // [排障] 先不发送，只验证重采样流程是否正常
         /*
@@ -372,6 +381,11 @@ void AudioStreamer::onSslErrors(const QList<QSslError>& errors) {
     ws_socket_.ignoreSslErrors();
 }
 
+void AudioStreamer::onError(QAbstractSocket::SocketError error) {
+    std::cerr << "[AudioStreamer] Socket error: " << static_cast<int>(error)
+              << " - " << ws_socket_.errorString().toStdString() << "\n";
+}
+
 void AudioStreamer::onTextMessage(const QString& message) {
     std::string msg = message.toStdString();
     std::cout << "[AudioStreamer] NLS recv: " << msg.substr(0, 200) << "\n";
@@ -399,7 +413,7 @@ void AudioStreamer::ParseNlsResult(const std::string& nls_json) {
         QString text = payload["result"].toString();
         if (text.isEmpty()) return;
 
-        QJsonObject sub;
+        QJsonObject sub;//这是自己人为加入的 type 
         sub["type"] = QStringLiteral("subtitle_interim");
         sub["text"] = text;
 

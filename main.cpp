@@ -29,5 +29,5 @@ int main(int argc, char *argv[])
     HomeWindow w;
     w.show();
 
-    return a.exec();
+    return a.exec();    
 }

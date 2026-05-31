@@ -134,9 +134,9 @@ void SubtitleManager::Render(QPainter* painter, double videoTimeMs,
     cfg_.screenW = screenW;
     cfg_.screenH = screenH;
 
-    UpdateFinalLines(videoTimeMs);
-    UpdateInterim();
-    CalculateStackLayout();
+    UpdateFinalLines(videoTimeMs);//更新final_lines的状态
+    UpdateInterim();//更新 interimVisible_ 是否可显示，就是 实时识别的字幕 还未完全识别完
+    CalculateStackLayout();//这个好像就是设置显示区域，并且也考虑了翻译译文的显示
 
     {
         std::lock_guard<std::mutex> lock(linesMutex_);
